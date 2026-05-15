@@ -1,0 +1,22 @@
+{
+    "name": "video-timelapse-2tiktok-agent",
+    "version": "0.0.1",
+    "description": "Video Timelapse to TikTok Agent",
+    "runtime": "chrome",
+    "main": "dist/index.js",
+    "public": true,
+    "version_public": true,
+    "pull_public": true,
+    "input": {
+        "type": "none"
+    },
+    "output": {
+        "type": "none"
+    },
+    "keywords": [
+        "video",
+        "timelapse",
+        "tiktok",
+        "chrome"
+    ]
+}
