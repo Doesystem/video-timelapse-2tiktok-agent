@@ -13,9 +13,10 @@
         "@lifetimesoft/agent-sdk": "0.0.22"
     },
     "devDependencies": {
+        "@types/chrome": "^0.1.42",
+        "esbuild": "0.25.4",
         "typescript": "5.9.3",
-        "vitest": "3.2.4",
-        "esbuild": "0.25.4"
+        "vitest": "3.2.4"
     },
     "license": "MIT"
 }

@@ -1,4 +1,5 @@
 import { defineAgent } from "@lifetimesoft/agent-sdk"
+import { generateBeforeImageInChrome, generateVideoInChrome } from "./chrome-flow-api"
 
 export type Category = "home" | "furniture"
 
@@ -37,8 +38,6 @@ function buildVideoPrompt(category: Category): string {
     }
 }
 
-const MCP_URL = "http://localhost:3000"
-
 export default defineAgent<VideoTimelapseInput, VideoTimelapseOutput>({
     async run(ctx) {
         const input = ctx.input as VideoTimelapseInput | null
@@ -59,60 +58,28 @@ export default defineAgent<VideoTimelapseInput, VideoTimelapseOutput>({
         ctx.log.info(`[video-timelapse-2tiktok-agent] Starting for product: ${product} (${category})`)
         ctx.log.info(`[video-timelapse-2tiktok-agent] After image (input): ${image_url}`)
 
-        // Step 1: Generate "before" image via MCP
-        ctx.log.info("[Step 1] Generating before image from after reference via MCP...")
+        // Step 1: Generate "before" image via Chrome automation
+        ctx.log.info("[Step 1] Generating before image from after reference via Chrome...")
         const beforePrompt = buildBeforePrompt(category)
         ctx.log.info(`[Step 1] prompt: ${beforePrompt}`)
 
         let beforeImageUrl = ""
         try {
-            const imgRes = await fetch(`${MCP_URL}/img/edit`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    image_urls: [image_url],
-                    prompt: beforePrompt,
-                    aspect_ratio: "9:16"
-                })
-            })
-            if (!imgRes.ok) {
-                throw new Error(`MCP /img/edit failed: ${imgRes.status} ${imgRes.statusText}`)
-            }
-            const imgData = await imgRes.json()
-            if (!imgData.success || !imgData.images || imgData.images.length === 0) {
-                throw new Error(`MCP /img/edit returned unsuccessful response: ${JSON.stringify(imgData)}`)
-            }
-            beforeImageUrl = `${MCP_URL}${imgData.images[0].url}`
+            beforeImageUrl = await generateBeforeImageInChrome(image_url, beforePrompt)
             ctx.log.info("[Step 1] response before image_url: " + beforeImageUrl)
         } catch (err) {
             ctx.log.error(`[Step 1] failed: ${err}`)
             return { video_url: "", status: "failed", product, category, before_prompt: beforePrompt, before_image_url: "", after_image_url: image_url }
         }
 
-        // Step 2: Create timelapse video via MCP
-        ctx.log.info("[Step 2] Creating 9:16 timelapse video (before → after) via MCP...")
+        // Step 2: Create timelapse video via Chrome automation
+        ctx.log.info("[Step 2] Creating 9:16 timelapse video (before → after) via Chrome...")
         const videoPrompt = buildVideoPrompt(category)
         ctx.log.info(`[Step 2] prompt: ${videoPrompt}`)
 
         let videoUrl = ""
         try {
-            const vidRes = await fetch(`${MCP_URL}/video/generate`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    prompt: videoPrompt,
-                    video_start: beforeImageUrl,
-                    video_end: image_url
-                })
-            })
-            if (!vidRes.ok) {
-                throw new Error(`MCP /video/generate failed: ${vidRes.status} ${vidRes.statusText}`)
-            }
-            const vidData = await vidRes.json()
-            if (!vidData.success || !vidData.videos || vidData.videos.length === 0) {
-                throw new Error(`MCP /video/generate returned unsuccessful response: ${JSON.stringify(vidData)}`)
-            }
-            videoUrl = `${MCP_URL}${vidData.videos[0].url}`
+            videoUrl = await generateVideoInChrome(beforeImageUrl, image_url, videoPrompt)
             ctx.log.info("[Step 2] response video_url: " + videoUrl)
         } catch (err) {
             ctx.log.error(`[Step 2] failed: ${err}`)
