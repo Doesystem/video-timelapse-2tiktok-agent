@@ -8,15 +8,36 @@
     "version_public": true,
     "pull_public": true,
     "input": {
-        "type": "none"
+        "type": "object",
+        "hints": [
+            "image_url",
+            "product",
+            "description",
+            "category"
+        ]
     },
     "output": {
-        "type": "none"
+        "type": "object",
+        "hints": [
+            "video_url",
+            "status",
+            "product",
+            "category"
+        ]
     },
     "keywords": [
         "video",
         "timelapse",
         "tiktok",
         "chrome"
-    ]
+    ],
+    "capabilities": {
+        "chrome": {
+            "required": true,
+            "features": [
+                "extension",
+                "tabs"
+            ]
+        }
+    }
 }
