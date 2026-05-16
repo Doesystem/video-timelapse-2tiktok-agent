@@ -65,7 +65,7 @@ export default defineAgent<VideoTimelapseInput, VideoTimelapseOutput>({
 
         let beforeImageUrl = ""
         try {
-            beforeImageUrl = await generateBeforeImageInChrome(image_url, beforePrompt)
+            beforeImageUrl = await generateBeforeImageInChrome(image_url, beforePrompt, (msg) => ctx.log.info(msg))
             ctx.log.info("[Step 1] response before image_url: " + beforeImageUrl)
         } catch (err) {
             ctx.log.error(`[Step 1] failed: ${err}`)
@@ -79,7 +79,7 @@ export default defineAgent<VideoTimelapseInput, VideoTimelapseOutput>({
 
         let videoUrl = ""
         try {
-            videoUrl = await generateVideoInChrome(beforeImageUrl, image_url, videoPrompt)
+            videoUrl = await generateVideoInChrome(beforeImageUrl, image_url, videoPrompt, (msg) => ctx.log.info(msg))
             ctx.log.info("[Step 2] response video_url: " + videoUrl)
         } catch (err) {
             ctx.log.error(`[Step 2] failed: ${err}`)
