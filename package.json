@@ -4,8 +4,9 @@
     "description": "Video Timelapse to TikTok Agent",
     "main": "dist/index.js",
     "scripts": {
-        "build": "esbuild src/index.ts --bundle --platform=browser --format=cjs --outfile=dist/index.js --external:ws",
+        "build": "esbuild src/index.ts --bundle --platform=browser --target=es2020 --format=cjs --outfile=dist/index.js --external:ws",
         "dev": "tsc --watch",
+        "dev:serve": "esbuild src/index.ts --bundle --platform=browser --target=es2020 --format=cjs --outfile=dist/index.js --external:ws --watch & npx serve dist --cors --listen 7700",
         "test": "vitest run",
         "test:watch": "vitest"
     },
@@ -15,6 +16,7 @@
     "devDependencies": {
         "@types/chrome": "^0.1.42",
         "esbuild": "0.25.4",
+        "serve": "^14.2.4",
         "typescript": "5.9.3",
         "vitest": "3.2.4"
     },

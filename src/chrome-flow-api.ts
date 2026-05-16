@@ -64,6 +64,11 @@ export async function generateBeforeImageInChrome(imageUrl: string, prompt: stri
                 const settingsBtn = findButton("Nano Banana")
                 if (settingsBtn) {
                     settingsBtn.click(); await sleep(1000)
+                    // Debug: dump all button texts to find correct 9:16 selector
+                    const allBtns = Array.from(document.querySelectorAll('button')).map(b => b.textContent?.trim()).filter(Boolean)
+                    log(`debug: buttons in settings = ${JSON.stringify(allBtns.slice(0, 20))}`)
+                    const allTabs = Array.from(document.querySelectorAll('[role="tab"]')).map(t => t.textContent?.trim()).filter(Boolean)
+                    log(`debug: tabs = ${JSON.stringify(allTabs)}`)
                     const ratioBtn = findButton("9:16")
                     if (ratioBtn) { ratioBtn.click(); log("ok: 9:16 selected") }
                     else log("skip: 9:16 button not found")
@@ -91,17 +96,27 @@ export async function generateBeforeImageInChrome(imageUrl: string, prompt: stri
                 log("step: click Create button")
                 const createBtns = Array.from(document.querySelectorAll('button')).filter(b => b.textContent?.trim() === 'Create' || b.textContent?.includes('Create'))
                 const createBtn = createBtns[createBtns.length - 1]
+                const editorContent = document.querySelector('[data-slate-editor="true"]')?.textContent ?? ""
+                log(`debug: editor content = "${editorContent.slice(0, 100)}"`)
+                log(`debug: create buttons = ${createBtns.length}, disabled = ${createBtn?.hasAttribute('disabled')}, aria-disabled = ${createBtn?.getAttribute('aria-disabled')}`)
                 if (createBtn) { createBtn.click(); await sleep(500); log("ok: Create clicked") }
                 else log("warn: Create button not found")
 
                 log("step: wait for generated image")
                 const newBeforeImgs = Array.from(document.querySelectorAll<HTMLImageElement>('img[src*="media.getMediaUrlRedirect"]')).map(img => img.src)
+                const allImgSrcs = Array.from(document.querySelectorAll('img')).map(i => i.src).filter(Boolean)
+                log(`debug: all img srcs at poll start = ${JSON.stringify(allImgSrcs.slice(0, 10))}`)
                 let generatedUrl = ""
                 for (let i = 0; i < 60; i++) {
                     await sleep(2000)
                     const currentImgs = Array.from(document.querySelectorAll<HTMLImageElement>('img[src*="media.getMediaUrlRedirect"]'))
                     const newImg = currentImgs.find(img => !newBeforeImgs.includes(img.src))
                     if (newImg) { generatedUrl = newImg.src; log(`ok: generated image found at i=${i}`); break }
+                    if (i === 5) {
+                        // After 10s, dump current imgs to debug
+                        const debugImgs = Array.from(document.querySelectorAll('img')).map(im => im.src).filter(Boolean)
+                        log(`debug: imgs at i=5 = ${JSON.stringify(debugImgs.slice(0, 10))}`)
+                    }
                 }
                 if (!generatedUrl) log("error: generated image not found after 120s")
 
