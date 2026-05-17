@@ -6,7 +6,7 @@
     "scripts": {
         "build": "esbuild src/index.ts --bundle --platform=browser --target=es2020 --format=cjs --outfile=dist/index.js --external:ws",
         "dev": "tsc --watch",
-        "dev:serve": "esbuild src/index.ts --bundle --platform=browser --target=es2020 --format=cjs --outfile=dist/index.js --external:ws --watch & npx serve dist --cors --listen 7700",
+        "dev:serve": "node scripts/dev-serve.mjs",
         "test": "vitest run",
         "test:watch": "vitest"
     },
