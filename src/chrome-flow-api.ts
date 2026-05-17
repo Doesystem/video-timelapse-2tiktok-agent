@@ -3,6 +3,7 @@
 interface ScriptResult {
     url: string
     logs: string[]
+    createClick?: { x: number; y: number }
 }
 
 type LogFn = (msg: string) => void
@@ -22,17 +23,82 @@ export async function generateBeforeImageInChrome(imageUrl: string, prompt: stri
                 const log = (msg: string) => { logs.push(msg); console.log("[flow-agent]", msg) }
                 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
                 const findButton = (text: string) => Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes(text))
+                const getMediaUrls = () => {
+                    const urls = [
+                        ...Array.from(document.querySelectorAll<HTMLImageElement>('img')).map(img => img.src),
+                        ...Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]')).map(a => a.href),
+                        ...Array.from(document.querySelectorAll<HTMLElement>('*')).flatMap(el => {
+                            const bg = getComputedStyle(el).backgroundImage
+                            return Array.from(bg.matchAll(/url\(["']?([^"')]+)["']?\)/g)).map(match => match[1])
+                        }),
+                    ]
+                    return Array.from(new Set(urls.filter(url => url && (url.includes("media.getMediaUrlRedirect") || url.includes("googleusercontent.com")))))
+                }
+                const snapshot = (label: string) => {
+                    const active = document.activeElement
+                    const buttons = Array.from(document.querySelectorAll('button')).map((b, index) => ({
+                        index,
+                        text: b.textContent?.trim().replace(/\s+/g, " ").slice(0, 80) ?? "",
+                        disabled: b.hasAttribute("disabled"),
+                        ariaDisabled: b.getAttribute("aria-disabled"),
+                        rect: (() => {
+                            const r = b.getBoundingClientRect()
+                            return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }
+                        })(),
+                    })).filter(b => b.text || b.rect.w || b.rect.h)
+                    log(`monitor: ${label}: active=${active?.tagName ?? ""} text="${active?.textContent?.trim().replace(/\s+/g, " ").slice(0, 80) ?? ""}"`)
+                    log(`monitor: ${label}: buttons=${JSON.stringify(buttons.slice(0, 40))}`)
+                    log(`monitor: ${label}: media=${JSON.stringify(getMediaUrls().slice(0, 10))}`)
+                    log(`monitor: ${label}: body="${document.body.innerText.replace(/\s+/g, " ").slice(0, 500)}"`)
+                }
+                const isClickable = (button: HTMLButtonElement) => {
+                    const style = getComputedStyle(button)
+                    const rect = button.getBoundingClientRect()
+                    return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none" && style.pointerEvents !== "none" && !button.hasAttribute("disabled") && button.getAttribute("aria-disabled") !== "true"
+                }
+                const fireRealClick = (button: HTMLButtonElement) => {
+                    button.scrollIntoView({ block: "center", inline: "center" })
+                    button.focus()
+                    const rect = button.getBoundingClientRect()
+                    const x = rect.left + rect.width / 2
+                    const y = rect.top + rect.height / 2
+                    const target = document.elementFromPoint(x, y) as HTMLElement | null
+                    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+                        const eventInit = { bubbles: true, cancelable: true, composed: true, view: window, clientX: x, clientY: y, button: 0, buttons: type.endsWith("down") ? 1 : 0 }
+                        const event = type.startsWith("pointer")
+                            ? new PointerEvent(type, { ...eventInit, pointerId: 1, pointerType: "mouse", isPrimary: true })
+                            : new MouseEvent(type, eventInit)
+                        ;(target ?? button).dispatchEvent(event)
+                    }
+                    button.click()
+                }
+                const pressEnterOnEditor = async () => {
+                    const editor = document.querySelector('[data-slate-editor="true"]') as HTMLElement | null
+                    if (!editor) { log("warn: cannot press Enter — Slate editor not found"); return }
+                    editor.focus()
+                    await sleep(300)
+                    for (const target of [editor, document]) {
+                        target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, composed: true }))
+                        target.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, composed: true }))
+                        target.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, composed: true }))
+                    }
+                    log("ok: Enter pressed before Create")
+                    await sleep(1000)
+                }
 
                 log("step: click New project")
+                snapshot("initial page")
                 const newProjBtn = findButton("New project")
                 if (newProjBtn) { newProjBtn.click(); await sleep(5000); log("ok: New project clicked") }
                 else log("skip: New project button not found")
+                snapshot("after New project")
 
                 const beforeImgs = Array.from(document.querySelectorAll<HTMLImageElement>('img[src*="media.getMediaUrlRedirect"]')).map(img => img.src)
                 log(`step: click Add Media (existing imgs: ${beforeImgs.length})`)
                 const addMediaBtn = findButton("Add Media") || findButton("add_2Create")
                 if (addMediaBtn) { addMediaBtn.click(); await sleep(1000); log("ok: Add Media clicked") }
                 else log("skip: Add Media button not found")
+                snapshot("after Add Media")
 
                 log("step: upload image via file input")
                 const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
@@ -48,6 +114,7 @@ export async function generateBeforeImageInChrome(imageUrl: string, prompt: stri
                         log(`ok: file dispatched (${blob.type}, ${blob.size} bytes)`)
                     } catch (e) { log(`error: upload failed — ${e}`) }
                 } else log("skip: file input not found")
+                snapshot("after file dispatch")
 
                 log("step: wait for uploaded image to appear")
                 let uploadedImg: HTMLImageElement | undefined
@@ -59,6 +126,7 @@ export async function generateBeforeImageInChrome(imageUrl: string, prompt: stri
                 }
                 if (!uploadedImg) log("warn: uploaded image not found after 30s")
                 else { uploadedImg.click(); await sleep(2000); log("ok: uploaded image clicked") }
+                snapshot("after uploaded image click")
 
                 log("step: open settings and set 9:16")
                 const settingsBtn = findButton("Nano Banana")
@@ -75,6 +143,7 @@ export async function generateBeforeImageInChrome(imageUrl: string, prompt: stri
                     await sleep(500)
                     document.body.click(); await sleep(500)
                 } else log("skip: settings button not found")
+                snapshot("after settings")
 
                 log("step: type prompt into Slate editor")
                 const editor = document.querySelector('[data-slate-editor="true"]') as HTMLElement
@@ -92,35 +161,57 @@ export async function generateBeforeImageInChrome(imageUrl: string, prompt: stri
                     await sleep(1000)
                     log(`ok: prompt typed (${textPrompt.length} chars)`)
                 } else log("warn: Slate editor not found")
+                snapshot("after prompt typed")
 
-                log("step: click Create button")
-                const createBtns = Array.from(document.querySelectorAll('button')).filter(b => b.textContent?.trim() === 'Create' || b.textContent?.includes('Create'))
-                const createBtn = createBtns[createBtns.length - 1]
-                const editorContent = document.querySelector('[data-slate-editor="true"]')?.textContent ?? ""
-                log(`debug: editor content = "${editorContent.slice(0, 100)}"`)
-                log(`debug: create buttons = ${createBtns.length}, disabled = ${createBtn?.hasAttribute('disabled')}, aria-disabled = ${createBtn?.getAttribute('aria-disabled')}`)
-                if (createBtn) { createBtn.click(); await sleep(500); log("ok: Create clicked") }
-                else log("warn: Create button not found")
-
-                log("step: wait for generated image")
-                const newBeforeImgs = Array.from(document.querySelectorAll<HTMLImageElement>('img[src*="media.getMediaUrlRedirect"]')).map(img => img.src)
-                const allImgSrcs = Array.from(document.querySelectorAll('img')).map(i => i.src).filter(Boolean)
-                log(`debug: all img srcs at poll start = ${JSON.stringify(allImgSrcs.slice(0, 10))}`)
-                let generatedUrl = ""
-                for (let i = 0; i < 60; i++) {
-                    await sleep(2000)
-                    const currentImgs = Array.from(document.querySelectorAll<HTMLImageElement>('img[src*="media.getMediaUrlRedirect"]'))
-                    const newImg = currentImgs.find(img => !newBeforeImgs.includes(img.src))
-                    if (newImg) { generatedUrl = newImg.src; log(`ok: generated image found at i=${i}`); break }
-                    if (i === 5) {
-                        // After 10s, dump current imgs to debug
-                        const debugImgs = Array.from(document.querySelectorAll('img')).map(im => im.src).filter(Boolean)
-                        log(`debug: imgs at i=5 = ${JSON.stringify(debugImgs.slice(0, 10))}`)
+                log("step: locate Create button")
+                snapshot("before Create")
+                await pressEnterOnEditor()
+                const createBtns = Array.from(document.querySelectorAll('button')).filter(b => {
+                    const text = b.textContent?.trim() ?? ""
+                    return text === "Create" || text.endsWith("Create") || text.includes("arrow_forwardCreate")
+                }) as HTMLButtonElement[]
+                const clickableCreateBtns = createBtns.filter(isClickable)
+                const describeButton = (button: HTMLButtonElement | undefined) => {
+                    if (!button) return null
+                    const r = button.getBoundingClientRect()
+                    return {
+                        text: button.textContent?.trim().replace(/\s+/g, " ").slice(0, 120) ?? "",
+                        disabled: button.hasAttribute("disabled"),
+                        ariaDisabled: button.getAttribute("aria-disabled"),
+                        rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) },
                     }
                 }
-                if (!generatedUrl) log("error: generated image not found after 120s")
+                const scoreCreateButton = (button: HTMLButtonElement) => {
+                    const text = button.textContent?.trim().replace(/\s+/g, "") ?? ""
+                    const r = button.getBoundingClientRect()
+                    let score = 0
+                    if (text === "arrow_forwardCreate") score += 100
+                    if (text.includes("arrow_forwardCreate")) score += 80
+                    if (text === "Create") score += 40
+                    if (r.y > window.innerHeight * 0.35) score += 20
+                    if (r.x > window.innerWidth * 0.5) score += 30
+                    return score
+                }
+                const createBtn = [...clickableCreateBtns].sort((a, b) => scoreCreateButton(b) - scoreCreateButton(a))[0]
+                const editorContent = document.querySelector('[data-slate-editor="true"]')?.textContent ?? ""
+                log(`debug: editor content = "${editorContent.slice(0, 100)}"`)
+                log(`debug: create candidates = ${JSON.stringify(clickableCreateBtns.map(describeButton))}`)
+                log(`debug: selected create = ${JSON.stringify(describeButton(createBtn))}`)
+                const mediaBeforeCreate = getMediaUrls()
+                const textBeforeCreate = document.body.innerText.replace(/\s+/g, " ")
+                if (!createBtn) {
+                    log("warn: clickable Create button not found")
+                    return { url: "", logs }
+                }
 
-                return { url: generatedUrl, logs }
+                const createRect = createBtn.getBoundingClientRect()
+                const createClick = {
+                    x: Math.round(createRect.left + createRect.width / 2),
+                    y: Math.round(createRect.top + createRect.height / 2),
+                }
+                log(`ok: Create button located at ${JSON.stringify(createClick)}`)
+
+                return { url: "", logs, createClick }
             },
             args: [imageUrl, prompt]
         })
@@ -129,11 +220,77 @@ export async function generateBeforeImageInChrome(imageUrl: string, prompt: stri
         if (result?.logs) {
             for (const line of result.logs) log(`[chrome-flow] ${line}`)
         }
-        if (!result?.url) throw new Error("Could not find generated image URL")
+        if (!result?.createClick) throw new Error("Could not find Create button coordinates")
+
+        log(`[chrome-flow] step: trusted click Create at ${JSON.stringify(result.createClick)}`)
+        await (chrome as unknown as { debugger: { click: (payload: { tabId: number; x: number; y: number }) => Promise<unknown> } }).debugger.click({ tabId, ...result.createClick })
+        await new Promise(r => setTimeout(r, 2000))
+
+        const waitResults = await chrome.scripting.executeScript({
+            target: { tabId },
+            func: async (): Promise<{ url: string; logs: string[] }> => {
+                const logs: string[] = []
+                const log = (msg: string) => { logs.push(msg); console.log("[flow-agent]", msg) }
+                const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+                const getMediaUrls = () => {
+                    const urls = [
+                        ...Array.from(document.querySelectorAll<HTMLImageElement>('img')).map(img => img.src),
+                        ...Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]')).map(a => a.href),
+                        ...Array.from(document.querySelectorAll<HTMLElement>('*')).flatMap(el => {
+                            const bg = getComputedStyle(el).backgroundImage
+                            return Array.from(bg.matchAll(/url\(["']?([^"')]+)["']?\)/g)).map(match => match[1])
+                        }),
+                    ]
+                    return Array.from(new Set(urls.filter(url => url && (url.includes("media.getMediaUrlRedirect") || url.includes("googleusercontent.com")))))
+                }
+                const snapshot = (label: string) => {
+                    const active = document.activeElement
+                    const buttons = Array.from(document.querySelectorAll('button')).map((b, index) => ({
+                        index,
+                        text: b.textContent?.trim().replace(/\s+/g, " ").slice(0, 80) ?? "",
+                        disabled: b.hasAttribute("disabled"),
+                        ariaDisabled: b.getAttribute("aria-disabled"),
+                        rect: (() => {
+                            const r = b.getBoundingClientRect()
+                            return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }
+                        })(),
+                    })).filter(b => b.text || b.rect.w || b.rect.h)
+                    log(`monitor: ${label}: active=${active?.tagName ?? ""} text="${active?.textContent?.trim().replace(/\s+/g, " ").slice(0, 80) ?? ""}"`)
+                    log(`monitor: ${label}: buttons=${JSON.stringify(buttons.slice(0, 40))}`)
+                    log(`monitor: ${label}: media=${JSON.stringify(getMediaUrls().slice(0, 10))}`)
+                    log(`monitor: ${label}: body="${document.body.innerText.replace(/\s+/g, " ").slice(0, 500)}"`)
+                }
+
+                snapshot("after trusted Create click")
+                log("step: wait for generated image")
+                const beforeUrls = getMediaUrls()
+                let generatedUrl = ""
+                for (let i = 0; i < 60; i++) {
+                    await sleep(2000)
+                    const currentUrls = getMediaUrls()
+                    const newUrl = currentUrls.find(url => !beforeUrls.includes(url))
+                    if (newUrl) { generatedUrl = newUrl; log(`ok: generated image found at i=${i}`); break }
+                    if (i === 0 || i === 5 || i === 15 || i === 30 || i === 45 || i === 59) {
+                        const bodyText = document.body.innerText.replace(/\s+/g, " ").slice(0, 500)
+                        log(`debug: media urls at i=${i} = ${JSON.stringify(currentUrls.slice(0, 10))}`)
+                        log(`debug: page text at i=${i} = "${bodyText}"`)
+                        snapshot(`generation poll i=${i}`)
+                    }
+                }
+                if (!generatedUrl) log("error: generated image not found after 120s")
+                return { url: generatedUrl, logs }
+            },
+        })
+
+        const waitResult = waitResults[0]?.result as ScriptResult | undefined
+        if (waitResult?.logs) {
+            for (const line of waitResult.logs) log(`[chrome-flow] ${line}`)
+        }
+        if (!waitResult?.url) throw new Error("Could not find generated image URL")
         setTimeout(() => chrome.tabs.remove(tabId), 1000)
-        return result.url
+        return waitResult.url
     } catch (err) {
-        chrome.tabs.remove(tabId).catch(() => {})
+        log(`[chrome-flow] leaving tab ${tabId} open for inspection after error`)
         throw err
     }
 }
