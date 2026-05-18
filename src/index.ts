@@ -51,8 +51,8 @@ function buildVideoPrompt(category: Category): string {
 }
 
 function buildTikTokCaption(product: string, description: string, category: Category): string {
-    const lines = [product?.trim(), description?.trim()].filter(Boolean)
-    return [...lines, HASHTAGS_BY_CATEGORY[category].join(" ")].join("\n\n")
+    const tagText = HASHTAGS_BY_CATEGORY[category].join(" ").trim()
+    return [product?.trim(), tagText, description?.trim()].filter(Boolean).join("\n\n")
 }
 
 export default defineAgent<VideoTimelapseInput, VideoTimelapseOutput>({
