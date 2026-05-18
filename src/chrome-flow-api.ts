@@ -653,7 +653,7 @@ export async function generateVideoInChrome(beforeUrl: string, afterUrl: string,
     }
 }
 
-export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, log: LogFn): Promise<void> {
+export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, caption: string, log: LogFn): Promise<void> {
     const tab = await chrome.tabs.create({ url: TIKTOK_STUDIO_UPLOAD_URL, active: true }) as chrome.tabs.Tab
     if (!tab.id) throw new Error("Failed to create TikTok upload tab")
     const tabId = tab.id
@@ -668,7 +668,7 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, log: L
         await new Promise(r => setTimeout(r, 8000))
         const results = await chrome.scripting.executeScript({
             target: { tabId },
-            func: async (sourceVideoDataUrl: string, sourceVideoType: string): Promise<{ logs: string[]; ok: boolean }> => {
+            func: async (sourceVideoDataUrl: string, sourceVideoType: string, captionText: string): Promise<{ logs: string[]; ok: boolean }> => {
                 const logs: string[] = []
                 const log = (msg: string) => { logs.push(msg); console.log("[tiktok-upload]", msg) }
                 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
@@ -696,6 +696,33 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, log: L
                 }
 
                 try {
+                    const setCaption = async () => {
+                        log("step: wait for TikTok caption editor")
+                        for (let i = 0; i < 120; i++) {
+                            const editor = document.querySelector<HTMLElement>('.caption-editor [contenteditable="true"], [contenteditable="true"][role="combobox"]')
+                            if (editor) {
+                                editor.focus()
+                                await sleep(300)
+                                document.execCommand("selectAll", false)
+                                document.execCommand("delete", false)
+                                await sleep(200)
+                                editor.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: captionText, bubbles: true, cancelable: true }))
+                                document.execCommand("insertText", false, captionText)
+                                editor.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: captionText, bubbles: true }))
+                                editor.dispatchEvent(new Event("change", { bubbles: true }))
+                                log(`ok: caption typed (${captionText.length} chars)`)
+                                return true
+                            }
+                            if (i === 0 || i === 15 || i === 45 || i === 90) {
+                                const bodyText = document.body?.innerText?.replace(/\s+/g, " ").slice(0, 240) ?? ""
+                                log(`waiting for TikTok caption editor i=${i}; body="${bodyText}"`)
+                            }
+                            await sleep(1000)
+                        }
+                        log("error: TikTok caption editor not found")
+                        return false
+                    }
+
                     log(`step: wait for TikTok upload input url=${location.href}`)
                     const fileInput = await waitForFileInput()
                     if (!fileInput) {
@@ -725,18 +752,20 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, log: L
                         const videos = Array.from(document.querySelectorAll<HTMLVideoElement>("video")).filter(visible)
                         if (videos.length > 0 || hasUploadProgress) {
                             log(`ok: TikTok upload page reacted at i=${i}`)
+                            if (!await setCaption()) return { logs, ok: false }
                             return { logs, ok: true }
                         }
                     }
 
                     log("warn: TikTok upload dispatch completed, but no visible page reaction detected")
+                    if (!await setCaption()) return { logs, ok: false }
                     return { logs, ok: true }
                 } catch (err) {
                     log(`error: TikTok upload script threw: ${err instanceof Error ? err.message : String(err)}`)
                     return { logs, ok: false }
                 }
             },
-            args: [fetchedVideo.dataUrl, fetchedVideo.type],
+            args: [fetchedVideo.dataUrl, fetchedVideo.type, caption],
         })
 
         const result = results[0]?.result as { logs?: string[]; ok?: boolean } | undefined
