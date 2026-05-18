@@ -712,6 +712,14 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
 
                     const setCaption = async () => {
                         log("step: wait for TikTok caption editor")
+                        const captionTextForEditor = captionText
+                            .replace(/(^|\s)#[^\s#]+/g, "")
+                            .replace(/[ \t]+\n/g, "\n")
+                            .replace(/\n{3,}/g, "\n\n")
+                            .trim()
+                        if (captionTextForEditor !== captionText.trim()) {
+                            log("warn: hashtags removed from TikTok description to avoid editor tag parser error")
+                        }
                         const typeCaptionNaturally = async (editor: HTMLElement, text: string) => {
                             for (const char of text) {
                                 document.execCommand("insertText", false, char)
@@ -733,7 +741,7 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                                 document.execCommand("delete", false)
                                 await sleep(700)
 
-                                await typeCaptionNaturally(editor, captionText)
+                                await typeCaptionNaturally(editor, captionTextForEditor)
 
                                 editor.dispatchEvent(new Event("change", { bubbles: true }))
                                 let lastCaption = ""
@@ -750,13 +758,13 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                                     if (stableCaptionTicks >= 2) break
                                 }
                                 const currentCaption = (editor.innerText || editor.textContent || "").trim()
-                                const duplicateCaption = `${captionText}\n${captionText}`.trim()
+                                const duplicateCaption = `${captionTextForEditor}\n${captionTextForEditor}`.trim()
                                 if (currentCaption === duplicateCaption || currentCaption.includes(duplicateCaption)) {
                                     log("warn: duplicate TikTok caption detected; rewriting once")
                                     document.execCommand("selectAll", false)
                                     document.execCommand("delete", false)
                                     await sleep(500)
-                                    await typeCaptionNaturally(editor, captionText)
+                                    await typeCaptionNaturally(editor, captionTextForEditor)
                                     editor.dispatchEvent(new Event("change", { bubbles: true }))
                                 }
                                 await sleep(5000)
@@ -765,7 +773,7 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                                     log(`error: TikTok rejected after caption; body="${bodyText.replace(/\s+/g, " ").slice(0, 240)}"`)
                                     return false
                                 }
-                                log(`ok: caption typed (${captionText.length} chars)`)
+                                log(`ok: caption typed (${captionTextForEditor.length} chars)`)
                                 return true
                             }
                             if (i === 0 || i === 15 || i === 45 || i === 90) {
