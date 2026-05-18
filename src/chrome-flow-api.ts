@@ -696,6 +696,20 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                 }
 
                 try {
+                    const waitForUploadComplete = async () => {
+                        log("step: wait 10s after TikTok upload starts before caption")
+                        for (let i = 0; i < 10; i++) {
+                            await sleep(1000)
+                            const pageText = document.body?.innerText?.replace(/\s+/g, " ") ?? ""
+                            if (/something went wrong|please try again|upload failed|failed to upload|เกิดข้อผิดพลาด|ลองอีกครั้ง/i.test(pageText)) {
+                                log(`error: TikTok upload failed before caption; body="${pageText.slice(0, 240)}"`)
+                                return false
+                            }
+                        }
+                        log("ok: waited 10s after TikTok upload starts")
+                        return true
+                    }
+
                     const setCaption = async () => {
                         log("step: wait for TikTok caption editor")
                         for (let i = 0; i < 120; i++) {
@@ -705,11 +719,32 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                                 await sleep(300)
                                 document.execCommand("selectAll", false)
                                 document.execCommand("delete", false)
-                                await sleep(200)
-                                editor.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: captionText, bubbles: true, cancelable: true }))
-                                document.execCommand("insertText", false, captionText)
-                                editor.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: captionText, bubbles: true }))
+                                await sleep(700)
+
+                                try {
+                                    const dt = new DataTransfer()
+                                    dt.setData("text/plain", captionText)
+                                    editor.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }))
+                                } catch {
+                                    // Ignore and fall back to insertText below.
+                                }
+
+                                await sleep(1000)
+                                const currentCaption = (editor.innerText || editor.textContent || "").trim()
+                                if (!currentCaption.includes(captionText.slice(0, Math.min(24, captionText.length)))) {
+                                    log("warn: TikTok caption paste did not populate editor; falling back to insertText")
+                                    document.execCommand("insertText", false, captionText)
+                                } else {
+                                    log("ok: TikTok caption pasted into editor")
+                                }
+
                                 editor.dispatchEvent(new Event("change", { bubbles: true }))
+                                await sleep(5000)
+                                const bodyText = document.body?.innerText ?? ""
+                                if (/something went wrong|please try again|upload failed|failed to upload|เกิดข้อผิดพลาด|ลองอีกครั้ง/i.test(bodyText)) {
+                                    log(`error: TikTok rejected after caption; body="${bodyText.replace(/\s+/g, " ").slice(0, 240)}"`)
+                                    return false
+                                }
                                 log(`ok: caption typed (${captionText.length} chars)`)
                                 return true
                             }
@@ -752,12 +787,14 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                         const videos = Array.from(document.querySelectorAll<HTMLVideoElement>("video")).filter(visible)
                         if (videos.length > 0 || hasUploadProgress) {
                             log(`ok: TikTok upload page reacted at i=${i}`)
+                            if (!await waitForUploadComplete()) return { logs, ok: false }
                             if (!await setCaption()) return { logs, ok: false }
                             return { logs, ok: true }
                         }
                     }
 
                     log("warn: TikTok upload dispatch completed, but no visible page reaction detected")
+                    if (!await waitForUploadComplete()) return { logs, ok: false }
                     if (!await setCaption()) return { logs, ok: false }
                     return { logs, ok: true }
                 } catch (err) {
