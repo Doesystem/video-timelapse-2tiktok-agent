@@ -1,6 +1,10 @@
 import { defineAgent } from "@lifetimesoft/agent-sdk"
 import { generateBeforeImageInChrome, generateVideoInChrome, uploadVideoToTikTokStudioInChrome } from "./chrome-flow-api"
 
+const SKIP_STEP1 = true
+const SKIP_STEP2 = true
+const MOCK_VIDEO_URL = "https://labs.google/fx/api/trpc/media.getMediaUrlRedirect?name=9ff7b174-ac0c-478e-beb9-171d827ae82d"
+
 export type Category = "home" | "furniture"
 
 export interface VideoTimelapseInput {
@@ -60,31 +64,39 @@ export default defineAgent<VideoTimelapseInput, VideoTimelapseOutput>({
         ctx.log.info(`[video-timelapse-2tiktok-agent] After image (input): ${image_url}`)
 
         // Step 1: Generate "before" image via Chrome automation
-        ctx.log.info("[Step 1] Generating before image from after reference via Chrome...")
         const beforePrompt = buildBeforePrompt(category)
-        ctx.log.info(`[Step 1] prompt: ${beforePrompt}`)
-
         let beforeImageUrl = ""
-        try {
-            beforeImageUrl = await generateBeforeImageInChrome(image_url, beforePrompt, (msg) => ctx.log.info(msg))
-            ctx.log.info("[Step 1] response before image_url: " + beforeImageUrl)
-        } catch (err) {
-            ctx.log.error(`[Step 1] failed: ${err}`)
-            return { video_url: "", status: "failed", product, category, before_prompt: beforePrompt, before_image_url: "", after_image_url: image_url, tiktok_upload_status: "skipped" }
+        if (SKIP_STEP1) {
+            ctx.log.info("[Step 1] skipped because SKIP_STEP1 is true.")
+        } else {
+            ctx.log.info("[Step 1] Generating before image from after reference via Chrome...")
+            ctx.log.info(`[Step 1] prompt: ${beforePrompt}`)
+            try {
+                beforeImageUrl = await generateBeforeImageInChrome(image_url, beforePrompt, (msg) => ctx.log.info(msg))
+                ctx.log.info("[Step 1] response before image_url: " + beforeImageUrl)
+            } catch (err) {
+                ctx.log.error(`[Step 1] failed: ${err}`)
+                return { video_url: "", status: "failed", product, category, before_prompt: beforePrompt, before_image_url: "", after_image_url: image_url, tiktok_upload_status: "skipped" }
+            }
         }
 
         // Step 2: Create timelapse video via Chrome automation
-        ctx.log.info("[Step 2] Creating 9:16 timelapse video (before → after) via Chrome...")
         const videoPrompt = buildVideoPrompt(category)
-        ctx.log.info(`[Step 2] prompt: ${videoPrompt}`)
-
         let videoUrl = ""
-        try {
-            videoUrl = await generateVideoInChrome(beforeImageUrl, image_url, videoPrompt, (msg) => ctx.log.info(msg))
-            ctx.log.info("[Step 2] response video_url: " + videoUrl)
-        } catch (err) {
-            ctx.log.error(`[Step 2] failed: ${err}`)
-            return { video_url: "", status: "failed", product, category, before_prompt: beforePrompt, before_image_url: beforeImageUrl, after_image_url: image_url, tiktok_upload_status: "skipped" }
+        if (SKIP_STEP2) {
+            videoUrl = MOCK_VIDEO_URL
+            ctx.log.info("[Step 2] skipped because SKIP_STEP2 is true.")
+            ctx.log.info("[Step 2] using mocked video_url: " + videoUrl)
+        } else {
+            ctx.log.info("[Step 2] Creating 9:16 timelapse video (before -> after) via Chrome...")
+            ctx.log.info(`[Step 2] prompt: ${videoPrompt}`)
+            try {
+                videoUrl = await generateVideoInChrome(beforeImageUrl, image_url, videoPrompt, (msg) => ctx.log.info(msg))
+                ctx.log.info("[Step 2] response video_url: " + videoUrl)
+            } catch (err) {
+                ctx.log.error(`[Step 2] failed: ${err}`)
+                return { video_url: "", status: "failed", product, category, before_prompt: beforePrompt, before_image_url: beforeImageUrl, after_image_url: image_url, tiktok_upload_status: "skipped" }
+            }
         }
 
         // Step 3: Upload generated video to TikTok Studio.

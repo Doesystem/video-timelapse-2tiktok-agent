@@ -659,10 +659,16 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, log: L
     const tabId = tab.id
 
     try {
+        log("[tiktok-upload] step: fetch generated video via extension host")
+        const fetchedVideo = await (chrome as unknown as {
+            fetchDataUrl: (url: string) => Promise<{ dataUrl: string; type: string; size: number }>
+        }).fetchDataUrl(videoUrl)
+        log(`[tiktok-upload] ok: generated video fetched (${fetchedVideo.size} bytes, ${fetchedVideo.type})`)
+
         await new Promise(r => setTimeout(r, 8000))
         const results = await chrome.scripting.executeScript({
             target: { tabId },
-            func: async (sourceVideoUrl: string): Promise<{ logs: string[]; ok: boolean }> => {
+            func: async (sourceVideoDataUrl: string, sourceVideoType: string): Promise<{ logs: string[]; ok: boolean }> => {
                 const logs: string[] = []
                 const log = (msg: string) => { logs.push(msg); console.log("[tiktok-upload]", msg) }
                 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
@@ -689,47 +695,53 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, log: L
                     return null
                 }
 
-                log("step: wait for TikTok upload input")
-                const fileInput = await waitForFileInput()
-                if (!fileInput) {
-                    log("error: TikTok file input not found")
-                    return { logs, ok: false }
-                }
-
-                log("step: fetch generated video")
-                const res = await fetch(sourceVideoUrl)
-                if (!res.ok) {
-                    log(`error: video fetch failed (${res.status})`)
-                    return { logs, ok: false }
-                }
-                const blob = await res.blob()
-                const file = new File([blob], `timelapse-${Date.now()}.mp4`, { type: blob.type || "video/mp4" })
-                const dt = new DataTransfer()
-                dt.items.add(file)
-                fileInput.files = dt.files
-                fileInput.dispatchEvent(new Event("input", { bubbles: true }))
-                fileInput.dispatchEvent(new Event("change", { bubbles: true }))
-                log(`ok: TikTok video file dispatched (${blob.size} bytes, ${file.type})`)
-
-                for (let i = 0; i < 60; i++) {
-                    await sleep(1000)
-                    const pageText = document.body?.innerText ?? ""
-                    const hasUploadProgress = /upload|processing|โพสต์|post|caption|cover|description/i.test(pageText)
-                    const videos = Array.from(document.querySelectorAll<HTMLVideoElement>("video")).filter(visible)
-                    if (videos.length > 0 || hasUploadProgress) {
-                        log(`ok: TikTok upload page reacted at i=${i}`)
-                        return { logs, ok: true }
+                try {
+                    log(`step: wait for TikTok upload input url=${location.href}`)
+                    const fileInput = await waitForFileInput()
+                    if (!fileInput) {
+                        log("error: TikTok file input not found")
+                        return { logs, ok: false }
                     }
-                }
 
-                log("warn: TikTok upload dispatch completed, but no visible page reaction detected")
-                return { logs, ok: true }
+                    log("step: build generated video file")
+                    const res = await fetch(sourceVideoDataUrl)
+                    if (!res.ok) {
+                        log(`error: video fetch failed (${res.status})`)
+                        return { logs, ok: false }
+                    }
+                    const blob = await res.blob()
+                    const file = new File([blob], `timelapse-${Date.now()}.mp4`, { type: sourceVideoType || blob.type || "video/mp4" })
+                    const dt = new DataTransfer()
+                    dt.items.add(file)
+                    fileInput.files = dt.files
+                    fileInput.dispatchEvent(new Event("input", { bubbles: true }))
+                    fileInput.dispatchEvent(new Event("change", { bubbles: true }))
+                    log(`ok: TikTok video file dispatched (${blob.size} bytes, ${file.type})`)
+
+                    for (let i = 0; i < 60; i++) {
+                        await sleep(1000)
+                        const pageText = document.body?.innerText ?? ""
+                        const hasUploadProgress = /upload|processing|post|caption|cover|description/i.test(pageText)
+                        const videos = Array.from(document.querySelectorAll<HTMLVideoElement>("video")).filter(visible)
+                        if (videos.length > 0 || hasUploadProgress) {
+                            log(`ok: TikTok upload page reacted at i=${i}`)
+                            return { logs, ok: true }
+                        }
+                    }
+
+                    log("warn: TikTok upload dispatch completed, but no visible page reaction detected")
+                    return { logs, ok: true }
+                } catch (err) {
+                    log(`error: TikTok upload script threw: ${err instanceof Error ? err.message : String(err)}`)
+                    return { logs, ok: false }
+                }
             },
-            args: [videoUrl],
+            args: [fetchedVideo.dataUrl, fetchedVideo.type],
         })
 
         const result = results[0]?.result as { logs?: string[]; ok?: boolean } | undefined
         for (const line of result?.logs ?? []) log(`[tiktok-upload] ${line}`)
+        if (!result) log(`[tiktok-upload] error: executeScript returned no result: ${JSON.stringify(results)}`)
         if (!result?.ok) throw new Error("TikTok upload failed")
     } catch (err) {
         log(`[tiktok-upload] leaving tab ${tabId} open for inspection after error`)
