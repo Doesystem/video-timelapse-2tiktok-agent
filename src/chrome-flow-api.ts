@@ -712,6 +712,18 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
 
                     const setCaption = async () => {
                         log("step: wait for TikTok caption editor")
+                        const typeCaptionNaturally = async (editor: HTMLElement, text: string) => {
+                            for (const char of text) {
+                                document.execCommand("insertText", false, char)
+                                if (char === "\n") {
+                                    await sleep(500)
+                                } else if (char === " " || char === "#") {
+                                    await sleep(180)
+                                } else {
+                                    await sleep(80 + Math.floor(Math.random() * 90))
+                                }
+                            }
+                        }
                         for (let i = 0; i < 120; i++) {
                             const editor = document.querySelector<HTMLElement>('.caption-editor [contenteditable="true"], [contenteditable="true"][role="combobox"]')
                             if (editor) {
@@ -721,24 +733,32 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                                 document.execCommand("delete", false)
                                 await sleep(700)
 
-                                try {
-                                    const dt = new DataTransfer()
-                                    dt.setData("text/plain", captionText)
-                                    editor.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }))
-                                } catch {
-                                    // Ignore and fall back to insertText below.
-                                }
-
-                                await sleep(1000)
-                                const currentCaption = (editor.innerText || editor.textContent || "").trim()
-                                if (!currentCaption.includes(captionText.slice(0, Math.min(24, captionText.length)))) {
-                                    log("warn: TikTok caption paste did not populate editor; falling back to insertText")
-                                    document.execCommand("insertText", false, captionText)
-                                } else {
-                                    log("ok: TikTok caption pasted into editor")
-                                }
+                                await typeCaptionNaturally(editor, captionText)
 
                                 editor.dispatchEvent(new Event("change", { bubbles: true }))
+                                let lastCaption = ""
+                                let stableCaptionTicks = 0
+                                for (let j = 0; j < 10; j++) {
+                                    await sleep(500)
+                                    const observedCaption = (editor.innerText || editor.textContent || "").trim()
+                                    if (observedCaption === lastCaption && observedCaption.length > 0) {
+                                        stableCaptionTicks += 1
+                                    } else {
+                                        stableCaptionTicks = 0
+                                        lastCaption = observedCaption
+                                    }
+                                    if (stableCaptionTicks >= 2) break
+                                }
+                                const currentCaption = (editor.innerText || editor.textContent || "").trim()
+                                const duplicateCaption = `${captionText}\n${captionText}`.trim()
+                                if (currentCaption === duplicateCaption || currentCaption.includes(duplicateCaption)) {
+                                    log("warn: duplicate TikTok caption detected; rewriting once")
+                                    document.execCommand("selectAll", false)
+                                    document.execCommand("delete", false)
+                                    await sleep(500)
+                                    await typeCaptionNaturally(editor, captionText)
+                                    editor.dispatchEvent(new Event("change", { bubbles: true }))
+                                }
                                 await sleep(5000)
                                 const bodyText = document.body?.innerText ?? ""
                                 if (/something went wrong|please try again|upload failed|failed to upload|เกิดข้อผิดพลาด|ลองอีกครั้ง/i.test(bodyText)) {
