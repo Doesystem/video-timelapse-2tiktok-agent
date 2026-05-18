@@ -1,5 +1,5 @@
 import { defineAgent } from "@lifetimesoft/agent-sdk"
-import { generateBeforeImageInChrome, generateVideoInChrome } from "./chrome-flow-api"
+import { generateBeforeImageInChrome, generateVideoInChrome, uploadVideoToTikTokStudioInChrome } from "./chrome-flow-api"
 
 export type Category = "home" | "furniture"
 
@@ -18,6 +18,7 @@ interface VideoTimelapseOutput {
     before_prompt: string
     before_image_url: string
     after_image_url: string
+    tiktok_upload_status: "completed" | "failed" | "skipped"
 }
 
 function buildBeforePrompt(category: Category): string {
@@ -46,11 +47,11 @@ export default defineAgent<VideoTimelapseInput, VideoTimelapseOutput>({
 
         if (!input?.image_url?.trim()) {
             ctx.log.error("[video-timelapse-2tiktok-agent] Missing required field: image_url")
-            return { video_url: "", status: "failed", product: input?.product ?? "", category: input?.category ?? "", before_prompt: "", before_image_url: "", after_image_url: "" }
+            return { video_url: "", status: "failed", product: input?.product ?? "", category: input?.category ?? "", before_prompt: "", before_image_url: "", after_image_url: "", tiktok_upload_status: "skipped" }
         }
         if (!input?.category) {
             ctx.log.error("[video-timelapse-2tiktok-agent] Missing required field: category")
-            return { video_url: "", status: "failed", product: input?.product ?? "", category: "", before_prompt: "", before_image_url: "", after_image_url: "" }
+            return { video_url: "", status: "failed", product: input?.product ?? "", category: "", before_prompt: "", before_image_url: "", after_image_url: "", tiktok_upload_status: "skipped" }
         }
 
         const { image_url, product, description, category } = input
@@ -69,7 +70,7 @@ export default defineAgent<VideoTimelapseInput, VideoTimelapseOutput>({
             ctx.log.info("[Step 1] response before image_url: " + beforeImageUrl)
         } catch (err) {
             ctx.log.error(`[Step 1] failed: ${err}`)
-            return { video_url: "", status: "failed", product, category, before_prompt: beforePrompt, before_image_url: "", after_image_url: image_url }
+            return { video_url: "", status: "failed", product, category, before_prompt: beforePrompt, before_image_url: "", after_image_url: image_url, tiktok_upload_status: "skipped" }
         }
 
         // Step 2: Create timelapse video via Chrome automation
@@ -83,7 +84,17 @@ export default defineAgent<VideoTimelapseInput, VideoTimelapseOutput>({
             ctx.log.info("[Step 2] response video_url: " + videoUrl)
         } catch (err) {
             ctx.log.error(`[Step 2] failed: ${err}`)
-            return { video_url: "", status: "failed", product, category, before_prompt: beforePrompt, before_image_url: beforeImageUrl, after_image_url: image_url }
+            return { video_url: "", status: "failed", product, category, before_prompt: beforePrompt, before_image_url: beforeImageUrl, after_image_url: image_url, tiktok_upload_status: "skipped" }
+        }
+
+        // Step 3: Upload generated video to TikTok Studio.
+        ctx.log.info("[Step 3] Uploading generated video to TikTok Studio...")
+        try {
+            await uploadVideoToTikTokStudioInChrome(videoUrl, (msg) => ctx.log.info(msg))
+            ctx.log.info("[Step 3] TikTok Studio upload completed.")
+        } catch (err) {
+            ctx.log.error(`[Step 3] failed: ${err}`)
+            return { video_url: videoUrl, status: "failed", product, category, before_prompt: beforePrompt, before_image_url: beforeImageUrl, after_image_url: image_url, tiktok_upload_status: "failed" }
         }
 
         ctx.log.info("[video-timelapse-2tiktok-agent] Done.")
@@ -96,6 +107,7 @@ export default defineAgent<VideoTimelapseInput, VideoTimelapseOutput>({
             before_prompt: beforePrompt,
             before_image_url: beforeImageUrl,
             after_image_url: image_url,
+            tiktok_upload_status: "completed",
         }
     },
 })
