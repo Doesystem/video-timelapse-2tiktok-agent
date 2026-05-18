@@ -4,6 +4,7 @@ interface ScriptResult {
     url: string
     logs: string[]
     createClick?: { x: number; y: number }
+    existingVideos?: string[]
 }
 
 type LogFn = (msg: string) => void
@@ -492,7 +493,7 @@ export async function generateVideoInChrome(beforeUrl: string, afterUrl: string,
 
         const results = await chrome.scripting.executeScript({
             target: { tabId },
-            func: async (startImgUrl: string, endImgUrl: string, textPrompt: string): Promise<{ url: string; logs: string[]; createClick?: { x: number; y: number } }> => {
+            func: async (startImgUrl: string, endImgUrl: string, textPrompt: string): Promise<{ url: string; logs: string[]; createClick?: { x: number; y: number }; existingVideos?: string[] }> => {
                 const logs: string[] = []
                 const log = (msg: string) => { logs.push(msg); console.log("[flow-agent]", msg) }
                 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
@@ -592,20 +593,10 @@ export async function generateVideoInChrome(beforeUrl: string, afterUrl: string,
                     document.execCommand('insertText', false, textPrompt)
                     editor.dispatchEvent(new InputEvent('input', { inputType: 'insertText', data: textPrompt, bubbles: true }))
                     await sleep(500)
-                    editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }))
-                    editor.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }))
-                    await sleep(1000)
                     log(`ok: prompt typed (${textPrompt.length} chars)`)
                 } else log("warn: Slate editor not found")
 
                 log("step: click Create button")
-                const editorAgain = document.querySelector('[data-slate-editor="true"]') as HTMLElement | null
-                editorAgain?.focus()
-                await sleep(300)
-                editorAgain?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, composed: true }))
-                editorAgain?.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, composed: true }))
-                await sleep(1000)
-
                 const createBtns = Array.from(document.querySelectorAll('button')).filter(b => {
                     const text = b.textContent?.trim() ?? ""
                     return text === "Create" || text.endsWith("Create") || text.includes("arrow_forwardCreate")
@@ -614,8 +605,9 @@ export async function generateVideoInChrome(beforeUrl: string, afterUrl: string,
                 if (!createBtn) { log("warn: Create button not found"); return { url: "", logs } }
                 const r = createBtn.getBoundingClientRect()
                 const createClick = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+                const existingVideos = Array.from(document.querySelectorAll<HTMLVideoElement>('video')).map(v => v.src).filter(Boolean)
                 log(`ok: Create button located at ${JSON.stringify(createClick)}`)
-                return { url: "", logs, createClick }
+                return { url: "", logs, createClick, existingVideos }
             },
             args: [beforeUrl, afterUrl, prompt]
         })
@@ -629,12 +621,12 @@ export async function generateVideoInChrome(beforeUrl: string, afterUrl: string,
         await trustedClick(result.createClick, "Create video")
         const waitResults = await chrome.scripting.executeScript({
             target: { tabId },
-            func: async (): Promise<{ url: string; logs: string[] }> => {
+            func: async (videosBeforeCreate: string[]): Promise<{ url: string; logs: string[] }> => {
                 const logs: string[] = []
                 const log = (msg: string) => { logs.push(msg); console.log("[flow-agent]", msg) }
                 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
                 log("step: wait for generated video")
-                const existingVideos = Array.from(document.querySelectorAll<HTMLVideoElement>('video')).map(v => v.src)
+                const existingVideos = videosBeforeCreate.filter(Boolean)
                 let generatedUrl = ""
                 for (let i = 0; i < 150; i++) {
                     await sleep(2000)
@@ -646,6 +638,7 @@ export async function generateVideoInChrome(beforeUrl: string, afterUrl: string,
                 if (!generatedUrl) log("error: video not found after 300s")
                 return { url: generatedUrl, logs }
             },
+            args: [result.existingVideos ?? []],
         })
         const waitResult = waitResults[0]?.result as ScriptResult | undefined
         if (waitResult?.logs) {
