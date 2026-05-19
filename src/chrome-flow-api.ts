@@ -815,7 +815,7 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                         log(`step: add TikTok product link product_id=${productIdForSearch}`)
                         for (let i = 0; i < 30; i++) {
                             const addButton = Array.from(document.querySelectorAll<HTMLButtonElement>(".anchor-tag-container button, button"))
-                                .filter(visible)
+                                .filter((button) => visible(button))
                                 .find((button) => {
                                     const text = button.textContent?.replace(/\s+/g, " ").trim() ?? ""
                                     return text === "Add" && button.getAttribute("aria-disabled") !== "true" && button.getAttribute("data-disabled") !== "true" && !button.disabled
@@ -839,11 +839,11 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                         for (let i = 0; i < 30; i++) {
                             await sleep(500)
                             const dialog = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"], .TUXModal'))
-                                .filter(visible)
+                                .filter((el) => visible(el))
                                 .find((el) => /add link/i.test(el.textContent ?? ""))
                             const nextButton = dialog
                                 ? Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
-                                    .filter(visible)
+                                    .filter((button) => visible(button))
                                     .find((button) => (button.textContent ?? "").replace(/\s+/g, " ").trim() === "Next" && button.getAttribute("aria-disabled") !== "true" && !button.disabled)
                                 : null
                             if (nextButton) {
@@ -864,7 +864,7 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                         for (let i = 0; i < 30; i++) {
                             await sleep(500)
                             const searchInput = Array.from(document.querySelectorAll<HTMLInputElement>('input[placeholder="Search products"], input[type="text"]'))
-                                .filter(visible)
+                                .filter((input) => visible(input))
                                 .find((input) => /search products/i.test(input.placeholder) || input.closest(".product-search-input-container"))
                             if (searchInput) {
                                 searchInput.focus()
@@ -888,7 +888,7 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                         for (let i = 0; i < 40; i++) {
                             await sleep(500)
                             const radioContainer = Array.from(document.querySelectorAll<HTMLElement>(".TUXRadio"))
-                                .filter(visible)
+                                .filter((container) => visible(container))
                                 .find((container) => {
                                     const input = container.querySelector<HTMLInputElement>('input[type="radio"]')
                                     return input && !input.disabled && container.getAttribute("data-disabled") !== "true"
@@ -908,7 +908,7 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                                 await sleep(700)
 
                                 const nextReady = Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
-                                    .filter(visible)
+                                    .filter((button) => visible(button))
                                     .some((button) => (button.textContent ?? "").replace(/\s+/g, " ").trim() === "Next" && button.getAttribute("aria-disabled") !== "true" && !button.disabled)
                                 if (radio.checked || nextReady) {
                                     log(`ok: product radio selected at i=${i}`)
@@ -928,11 +928,13 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
 
                         for (let i = 0; i < 30; i++) {
                             await sleep(500)
-                            const dialog = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"], .TUXModal'))
-                                .filter(visible)
-                                .at(-1)
-                            const nextButton = (dialog ? Array.from(dialog.querySelectorAll<HTMLButtonElement>("button")) : Array.from(document.querySelectorAll<HTMLButtonElement>("button")))
-                                .filter(visible)
+                            const dialogs = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"], .TUXModal')).filter((el) => visible(el))
+                            const dialog = dialogs.length > 0 ? dialogs[dialogs.length - 1] : null
+                            const nextButtons = dialog
+                                ? Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
+                                : Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
+                            const nextButton = nextButtons
+                                .filter((button) => visible(button))
                                 .find((button) => (button.textContent ?? "").replace(/\s+/g, " ").trim() === "Next" && button.getAttribute("aria-disabled") !== "true" && !button.disabled)
                             if (nextButton) {
                                 clickElement(nextButton)
@@ -951,11 +953,13 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
 
                         for (let i = 0; i < 30; i++) {
                             await sleep(500)
-                            const dialog = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"], .TUXModal'))
-                                .filter(visible)
-                                .at(-1)
-                            const addButton = (dialog ? Array.from(dialog.querySelectorAll<HTMLButtonElement>("button")) : Array.from(document.querySelectorAll<HTMLButtonElement>("button")))
-                                .filter(visible)
+                            const dialogs = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"], .TUXModal')).filter((el) => visible(el))
+                            const dialog = dialogs.length > 0 ? dialogs[dialogs.length - 1] : null
+                            const addButtons = dialog
+                                ? Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
+                                : Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
+                            const addButton = addButtons
+                                .filter((button) => visible(button))
                                 .find((button) => (button.textContent ?? "").replace(/\s+/g, " ").trim() === "Add" && button.getAttribute("aria-disabled") !== "true" && !button.disabled)
                             if (addButton) {
                                 clickElement(addButton)
