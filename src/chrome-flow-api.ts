@@ -976,6 +976,70 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                         return false
                     }
 
+                    const enableAIGeneratedContent = async () => {
+                        log("step: enable TikTok AI-generated content setting")
+
+                        for (let i = 0; i < 20; i++) {
+                            const container = document.querySelector<HTMLElement>('[data-e2e="advanced_settings_container"]')
+                            const showMoreButton = container?.querySelector<HTMLElement>(".more-btn") ??
+                                Array.from(document.querySelectorAll<HTMLElement>("span, div, button"))
+                                    .filter((el) => visible(el))
+                                    .find((el) => (el.textContent ?? "").replace(/\s+/g, " ").trim() === "Show more")
+                            const collapsed = container?.className.includes("collapsed") ?? true
+                            if (showMoreButton && collapsed) {
+                                clickElement(showMoreButton)
+                                log(`ok: Show more clicked at i=${i}`)
+                                await sleep(1000)
+                                break
+                            }
+                            if (container && !collapsed) {
+                                log("ok: advanced settings already expanded")
+                                break
+                            }
+                            if (i === 0 || i === 10) {
+                                const bodyText = document.body?.innerText?.replace(/\s+/g, " ").slice(0, 240) ?? ""
+                                log(`waiting for Show more i=${i}; body="${bodyText}"`)
+                            }
+                            await sleep(1000)
+                        }
+
+                        for (let i = 0; i < 30; i++) {
+                            const aigcContainer = document.querySelector<HTMLElement>('[data-e2e="aigc_container"]')
+                            const switchContent = aigcContainer?.querySelector<HTMLElement>('[role="switch"], .Switch__content')
+                            const switchInput = aigcContainer?.querySelector<HTMLInputElement>('input[type="checkbox"], input[role="switch"]')
+                            const checked =
+                                switchContent?.getAttribute("aria-checked") === "true" ||
+                                switchContent?.getAttribute("data-state") === "checked" ||
+                                switchInput?.checked === true
+
+                            if (checked) {
+                                log("ok: AI-generated content setting already enabled")
+                                return true
+                            }
+                            if (switchContent || switchInput) {
+                                clickElement((switchContent ?? switchInput) as HTMLElement)
+                                await sleep(1000)
+                                const nowChecked =
+                                    switchContent?.getAttribute("aria-checked") === "true" ||
+                                    switchContent?.getAttribute("data-state") === "checked" ||
+                                    switchInput?.checked === true
+                                if (nowChecked) {
+                                    log(`ok: AI-generated content setting enabled at i=${i}`)
+                                    return true
+                                }
+                                log(`waiting for AI-generated content switch to enable i=${i}`)
+                            }
+                            if (i === 0 || i === 10 || i === 20) {
+                                const bodyText = document.body?.innerText?.replace(/\s+/g, " ").slice(0, 240) ?? ""
+                                log(`waiting for AI-generated content switch i=${i}; body="${bodyText}"`)
+                            }
+                            await sleep(1000)
+                        }
+
+                        log("error: AI-generated content switch not found or did not enable")
+                        return false
+                    }
+
                     log(`step: wait for TikTok upload input url=${location.href}`)
                     const fileInput = await waitForFileInput()
                     if (!fileInput) {
@@ -1008,6 +1072,7 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                             if (!await waitForUploadComplete()) return { logs, ok: false }
                             if (!await setCaption()) return { logs, ok: false }
                             if (!await addProductLink()) return { logs, ok: false }
+                            if (!await enableAIGeneratedContent()) return { logs, ok: false }
                             return { logs, ok: true }
                         }
                     }
@@ -1016,6 +1081,7 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                     if (!await waitForUploadComplete()) return { logs, ok: false }
                     if (!await setCaption()) return { logs, ok: false }
                     if (!await addProductLink()) return { logs, ok: false }
+                    if (!await enableAIGeneratedContent()) return { logs, ok: false }
                     return { logs, ok: true }
                 } catch (err) {
                     log(`error: TikTok upload script threw: ${err instanceof Error ? err.message : String(err)}`)
