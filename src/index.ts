@@ -52,7 +52,7 @@ function buildVideoPrompt(category: Category): string {
 
 function buildTikTokCaption(product: string, description: string, category: Category): string {
     const tagText = HASHTAGS_BY_CATEGORY[category].join(" ").trim()
-    return [product?.trim(), tagText, description?.trim()].filter(Boolean).join("\n\n")
+    return ['.', product?.trim(), tagText, description?.trim(), '.'].filter(Boolean).join("\n\n")
 }
 
 export default defineAgent<VideoTimelapseInput, VideoTimelapseOutput>({
@@ -75,6 +75,7 @@ export default defineAgent<VideoTimelapseInput, VideoTimelapseOutput>({
 
         ctx.log.info(`[video-timelapse-2tiktok-agent] Starting for product: ${product} (${category})`)
         ctx.log.info(`[video-timelapse-2tiktok-agent] After image (input): ${image_url}`)
+        ctx.log.info(`[video-timelapse-2tiktok-agent] tiktokCaption : ${tiktokCaption}`)
 
         // Step 1: Generate "before" image via Chrome automation
         const beforePrompt = buildBeforePrompt(category)
@@ -115,7 +116,7 @@ export default defineAgent<VideoTimelapseInput, VideoTimelapseOutput>({
         // Step 3: Upload generated video to TikTok Studio.
         ctx.log.info("[Step 3] Uploading generated video to TikTok Studio...")
         try {
-            await uploadVideoToTikTokStudioInChrome(videoUrl, tiktokCaption, (msg) => ctx.log.info(msg))
+            await uploadVideoToTikTokStudioInChrome(videoUrl, tiktokCaption, (msg) => ctx.log.info(msg), product_id)
             ctx.log.info("[Step 3] TikTok Studio upload completed.")
         } catch (err) {
             ctx.log.error(`[Step 3] failed: ${err}`)

@@ -653,7 +653,7 @@ export async function generateVideoInChrome(beforeUrl: string, afterUrl: string,
     }
 }
 
-export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, caption: string, log: LogFn): Promise<void> {
+export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, caption: string, log: LogFn, productId = ""): Promise<void> {
     const tab = await chrome.tabs.create({ url: TIKTOK_STUDIO_UPLOAD_URL, active: true }) as chrome.tabs.Tab
     if (!tab.id) throw new Error("Failed to create TikTok upload tab")
     const tabId = tab.id
@@ -668,7 +668,7 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
         await new Promise(r => setTimeout(r, 8000))
         const results = await chrome.scripting.executeScript({
             target: { tabId },
-            func: async (sourceVideoDataUrl: string, sourceVideoType: string, captionText: string): Promise<{ logs: string[]; ok: boolean }> => {
+            func: async (sourceVideoDataUrl: string, sourceVideoType: string, captionText: string, productIdText: string): Promise<{ logs: string[]; ok: boolean }> => {
                 const logs: string[] = []
                 const log = (msg: string) => { logs.push(msg); console.log("[tiktok-upload]", msg) }
                 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
@@ -676,6 +676,28 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                     const rect = (el as HTMLElement).getBoundingClientRect()
                     const style = window.getComputedStyle(el as HTMLElement)
                     return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none"
+                }
+                const clickElement = (el: HTMLElement) => {
+                    el.scrollIntoView({ block: "center", inline: "center" })
+                    el.focus()
+                    const rect = el.getBoundingClientRect()
+                    const x = rect.left + rect.width / 2
+                    const y = rect.top + rect.height / 2
+                    const target = document.elementFromPoint(x, y) as HTMLElement | null
+                    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+                        const init = { bubbles: true, cancelable: true, composed: true, view: window, clientX: x, clientY: y, button: 0, buttons: type.endsWith("down") ? 1 : 0 }
+                        const event = type.startsWith("pointer")
+                            ? new PointerEvent(type, { ...init, pointerId: 1, pointerType: "mouse", isPrimary: true })
+                            : new MouseEvent(type, init)
+                        ;(target ?? el).dispatchEvent(event)
+                    }
+                    el.click()
+                }
+                const setInputValue = (input: HTMLInputElement, value: string) => {
+                    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set
+                    setter?.call(input, value)
+                    input.dispatchEvent(new Event("input", { bubbles: true }))
+                    input.dispatchEvent(new Event("change", { bubbles: true }))
                 }
                 const waitForFileInput = async () => {
                     for (let i = 0; i < 90; i++) {
@@ -783,6 +805,86 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                         return false
                     }
 
+                    const addProductLink = async () => {
+                        const productIdForSearch = productIdText.trim()
+                        if (!productIdForSearch) {
+                            log("skip: product_id not provided; product link not added")
+                            return true
+                        }
+
+                        log(`step: add TikTok product link product_id=${productIdForSearch}`)
+                        for (let i = 0; i < 30; i++) {
+                            const addButton = Array.from(document.querySelectorAll<HTMLButtonElement>(".anchor-tag-container button, button"))
+                                .filter(visible)
+                                .find((button) => {
+                                    const text = button.textContent?.replace(/\s+/g, " ").trim() ?? ""
+                                    return text === "Add" && button.getAttribute("aria-disabled") !== "true" && button.getAttribute("data-disabled") !== "true" && !button.disabled
+                                })
+                            if (addButton) {
+                                clickElement(addButton)
+                                log(`ok: Add link button clicked at i=${i}`)
+                                break
+                            }
+                            if (i === 0 || i === 10 || i === 20) {
+                                const bodyText = document.body?.innerText?.replace(/\s+/g, " ").slice(0, 240) ?? ""
+                                log(`waiting for TikTok Add link button i=${i}; body="${bodyText}"`)
+                            }
+                            await sleep(1000)
+                            if (i === 29) {
+                                log("error: TikTok Add link button not found")
+                                return false
+                            }
+                        }
+
+                        for (let i = 0; i < 30; i++) {
+                            await sleep(500)
+                            const dialog = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"], .TUXModal'))
+                                .filter(visible)
+                                .find((el) => /add link/i.test(el.textContent ?? ""))
+                            const nextButton = dialog
+                                ? Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
+                                    .filter(visible)
+                                    .find((button) => (button.textContent ?? "").replace(/\s+/g, " ").trim() === "Next" && button.getAttribute("aria-disabled") !== "true" && !button.disabled)
+                                : null
+                            if (nextButton) {
+                                clickElement(nextButton)
+                                log(`ok: Add link Next clicked at i=${i}`)
+                                break
+                            }
+                            if (i === 0 || i === 10 || i === 20) {
+                                const bodyText = document.body?.innerText?.replace(/\s+/g, " ").slice(0, 240) ?? ""
+                                log(`waiting for Add link Next button i=${i}; body="${bodyText}"`)
+                            }
+                            if (i === 29) {
+                                log("error: Add link Next button not found")
+                                return false
+                            }
+                        }
+
+                        for (let i = 0; i < 30; i++) {
+                            await sleep(500)
+                            const searchInput = Array.from(document.querySelectorAll<HTMLInputElement>('input[placeholder="Search products"], input[type="text"]'))
+                                .filter(visible)
+                                .find((input) => /search products/i.test(input.placeholder) || input.closest(".product-search-input-container"))
+                            if (searchInput) {
+                                searchInput.focus()
+                                await sleep(300)
+                                setInputValue(searchInput, productIdForSearch)
+                                searchInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }))
+                                searchInput.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }))
+                                log(`ok: product_id typed into Search products (${productIdForSearch})`)
+                                return true
+                            }
+                            if (i === 0 || i === 10 || i === 20) {
+                                const bodyText = document.body?.innerText?.replace(/\s+/g, " ").slice(0, 240) ?? ""
+                                log(`waiting for product search input i=${i}; body="${bodyText}"`)
+                            }
+                        }
+
+                        log("error: product search input not found")
+                        return false
+                    }
+
                     log(`step: wait for TikTok upload input url=${location.href}`)
                     const fileInput = await waitForFileInput()
                     if (!fileInput) {
@@ -814,6 +916,7 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                             log(`ok: TikTok upload page reacted at i=${i}`)
                             if (!await waitForUploadComplete()) return { logs, ok: false }
                             if (!await setCaption()) return { logs, ok: false }
+                            if (!await addProductLink()) return { logs, ok: false }
                             return { logs, ok: true }
                         }
                     }
@@ -821,13 +924,14 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                     log("warn: TikTok upload dispatch completed, but no visible page reaction detected")
                     if (!await waitForUploadComplete()) return { logs, ok: false }
                     if (!await setCaption()) return { logs, ok: false }
+                    if (!await addProductLink()) return { logs, ok: false }
                     return { logs, ok: true }
                 } catch (err) {
                     log(`error: TikTok upload script threw: ${err instanceof Error ? err.message : String(err)}`)
                     return { logs, ok: false }
                 }
             },
-            args: [fetchedVideo.dataUrl, fetchedVideo.type, caption],
+            args: [fetchedVideo.dataUrl, fetchedVideo.type, caption, productId],
         })
 
         const result = results[0]?.result as { logs?: string[]; ok?: boolean } | undefined
