@@ -873,15 +873,102 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                                 searchInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }))
                                 searchInput.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }))
                                 log(`ok: product_id typed into Search products (${productIdForSearch})`)
-                                return true
+                                break
                             }
                             if (i === 0 || i === 10 || i === 20) {
                                 const bodyText = document.body?.innerText?.replace(/\s+/g, " ").slice(0, 240) ?? ""
                                 log(`waiting for product search input i=${i}; body="${bodyText}"`)
                             }
+                            if (i === 29) {
+                                log("error: product search input not found")
+                                return false
+                            }
                         }
 
-                        log("error: product search input not found")
+                        for (let i = 0; i < 40; i++) {
+                            await sleep(500)
+                            const radioContainer = Array.from(document.querySelectorAll<HTMLElement>(".TUXRadio"))
+                                .filter(visible)
+                                .find((container) => {
+                                    const input = container.querySelector<HTMLInputElement>('input[type="radio"]')
+                                    return input && !input.disabled && container.getAttribute("data-disabled") !== "true"
+                                })
+                            const radio = radioContainer?.querySelector<HTMLInputElement>('input[type="radio"]') ?? null
+                            if (radio) {
+                                const clickTarget =
+                                    radioContainer?.querySelector<HTMLElement>(".TUXRadioStandalone") ??
+                                    radioContainer ??
+                                    radio
+                                clickElement(clickTarget)
+                                await sleep(300)
+                                radio.focus()
+                                radio.click()
+                                radio.dispatchEvent(new KeyboardEvent("keydown", { key: " ", code: "Space", keyCode: 32, which: 32, bubbles: true, cancelable: true }))
+                                radio.dispatchEvent(new KeyboardEvent("keyup", { key: " ", code: "Space", keyCode: 32, which: 32, bubbles: true, cancelable: true }))
+                                await sleep(700)
+
+                                const nextReady = Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
+                                    .filter(visible)
+                                    .some((button) => (button.textContent ?? "").replace(/\s+/g, " ").trim() === "Next" && button.getAttribute("aria-disabled") !== "true" && !button.disabled)
+                                if (radio.checked || nextReady) {
+                                    log(`ok: product radio selected at i=${i}`)
+                                    break
+                                }
+                                log(`waiting for product radio selection to apply i=${i}`)
+                            }
+                            if (i === 0 || i === 10 || i === 25) {
+                                const bodyText = document.body?.innerText?.replace(/\s+/g, " ").slice(0, 240) ?? ""
+                                log(`waiting for product radio i=${i}; body="${bodyText}"`)
+                            }
+                            if (i === 39) {
+                                log("error: product radio not found")
+                                return false
+                            }
+                        }
+
+                        for (let i = 0; i < 30; i++) {
+                            await sleep(500)
+                            const dialog = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"], .TUXModal'))
+                                .filter(visible)
+                                .at(-1)
+                            const nextButton = (dialog ? Array.from(dialog.querySelectorAll<HTMLButtonElement>("button")) : Array.from(document.querySelectorAll<HTMLButtonElement>("button")))
+                                .filter(visible)
+                                .find((button) => (button.textContent ?? "").replace(/\s+/g, " ").trim() === "Next" && button.getAttribute("aria-disabled") !== "true" && !button.disabled)
+                            if (nextButton) {
+                                clickElement(nextButton)
+                                log(`ok: product select Next clicked at i=${i}`)
+                                break
+                            }
+                            if (i === 0 || i === 10 || i === 20) {
+                                const bodyText = document.body?.innerText?.replace(/\s+/g, " ").slice(0, 240) ?? ""
+                                log(`waiting for product select Next button i=${i}; body="${bodyText}"`)
+                            }
+                            if (i === 29) {
+                                log("error: product select Next button not found")
+                                return false
+                            }
+                        }
+
+                        for (let i = 0; i < 30; i++) {
+                            await sleep(500)
+                            const dialog = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"], .TUXModal'))
+                                .filter(visible)
+                                .at(-1)
+                            const addButton = (dialog ? Array.from(dialog.querySelectorAll<HTMLButtonElement>("button")) : Array.from(document.querySelectorAll<HTMLButtonElement>("button")))
+                                .filter(visible)
+                                .find((button) => (button.textContent ?? "").replace(/\s+/g, " ").trim() === "Add" && button.getAttribute("aria-disabled") !== "true" && !button.disabled)
+                            if (addButton) {
+                                clickElement(addButton)
+                                log(`ok: product link Add clicked at i=${i}`)
+                                return true
+                            }
+                            if (i === 0 || i === 10 || i === 20) {
+                                const bodyText = document.body?.innerText?.replace(/\s+/g, " ").slice(0, 240) ?? ""
+                                log(`waiting for product link Add button i=${i}; body="${bodyText}"`)
+                            }
+                        }
+
+                        log("error: product link Add button not found")
                         return false
                     }
 
