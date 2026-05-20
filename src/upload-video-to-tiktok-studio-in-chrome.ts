@@ -392,6 +392,46 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                         return false
                     }
 
+                    const clickPostButton = async () => {
+                        log("step: click TikTok Post button")
+                        for (let i = 0; i < 90; i++) {
+                            const postButton = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-e2e="post_video_button"], button'))
+                                .filter((button) => visible(button))
+                                .find((button) => {
+                                    const text = (button.textContent ?? "").replace(/\s+/g, " ").trim()
+                                    return (button.getAttribute("data-e2e") === "post_video_button" || text === "Post") &&
+                                        button.getAttribute("aria-disabled") !== "true" &&
+                                        button.getAttribute("data-disabled") !== "true" &&
+                                        button.getAttribute("data-loading") !== "true" &&
+                                        !button.disabled
+                                })
+                            if (postButton) {
+                                clickElement(postButton)
+                                log(`ok: TikTok Post button clicked at i=${i}`)
+                                return true
+                            }
+                            if (i === 0 || i === 15 || i === 45 || i === 75) {
+                                const bodyText = document.body?.innerText?.replace(/\s+/g, " ").slice(0, 240) ?? ""
+                                const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
+                                    .filter((button) => visible(button))
+                                    .map((button) => ({
+                                        text: (button.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 80),
+                                        e2e: button.getAttribute("data-e2e"),
+                                        disabled: button.disabled,
+                                        ariaDisabled: button.getAttribute("aria-disabled"),
+                                        dataDisabled: button.getAttribute("data-disabled"),
+                                        loading: button.getAttribute("data-loading"),
+                                    }))
+                                    .filter((button) => button.text || button.e2e)
+                                    .slice(0, 16)
+                                log(`waiting for TikTok Post button i=${i}; buttons=${JSON.stringify(buttons)} body="${bodyText}"`)
+                            }
+                            await sleep(1000)
+                        }
+                        log("error: TikTok Post button not found or not enabled")
+                        return false
+                    }
+
                     log(`step: wait for TikTok upload input url=${location.href}`)
                     const fileInput = await waitForFileInput()
                     if (!fileInput) {
@@ -425,6 +465,7 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                             if (!await setCaption()) return { logs, ok: false }
                             if (!await addProductLink()) return { logs, ok: false }
                             if (!await enableAIGeneratedContent()) return { logs, ok: false }
+                            if (!await clickPostButton()) return { logs, ok: false }
                             return { logs, ok: true }
                         }
                     }
@@ -434,6 +475,7 @@ export async function uploadVideoToTikTokStudioInChrome(videoUrl: string, captio
                     if (!await setCaption()) return { logs, ok: false }
                     if (!await addProductLink()) return { logs, ok: false }
                     if (!await enableAIGeneratedContent()) return { logs, ok: false }
+                    if (!await clickPostButton()) return { logs, ok: false }
                     return { logs, ok: true }
                 } catch (err) {
                     log(`error: TikTok upload script threw: ${err instanceof Error ? err.message : String(err)}`)
