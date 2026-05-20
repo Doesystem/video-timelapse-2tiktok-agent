@@ -199,7 +199,9 @@ export async function generateVideoInChrome(beforeUrl: string, afterUrl: string,
 
         const results = await chrome.scripting.executeScript({
             target: { tabId },
-            func: async (startImgUrl: string, endImgUrl: string, textPrompt: string): Promise<{ url: string; createClick?: { x: number; y: number }; existingVideos?: string[] }> => {
+            func: async (startImgUrl: string, endImgUrl: string, textPrompt: string): Promise<{ url: string; logs: string[]; createClick?: { x: number; y: number }; existingVideos?: string[] }> => {
+                const logs: string[] = []
+                const log = (msg: string) => { logs.push(msg); console.log("[flow-agent]", msg) }
                 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
                 const findButton = (text: string) => Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes(text))
                 const isClickable = (button: HTMLButtonElement) => {
@@ -239,6 +241,7 @@ export async function generateVideoInChrome(beforeUrl: string, afterUrl: string,
                     return null
                 }
 
+                try {
                 const startSrc = await uploadAndWait(startImgUrl, "start frame")
                 const endSrc = await uploadAndWait(endImgUrl, "end frame")
 
@@ -319,12 +322,16 @@ export async function generateVideoInChrome(beforeUrl: string, afterUrl: string,
                     return text === "Create" || text.endsWith("Create") || text.includes("arrow_forwardCreate")
                 }) as HTMLButtonElement[]
                 const createBtn = createBtns.filter(isClickable).sort((a, b) => b.getBoundingClientRect().x - a.getBoundingClientRect().x)[0]
-                if (!createBtn) { log("warn: Create button not found"); return { url: "" } }
+                if (!createBtn) { log("warn: Create button not found"); return { url: "", logs } }
                 const r = createBtn.getBoundingClientRect()
                 const createClick = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
                 const existingVideos = Array.from(document.querySelectorAll<HTMLVideoElement>('video')).map(v => v.src).filter(Boolean)
                 log(`ok: Create button located at ${JSON.stringify(createClick)}`)
-                return { url: "", createClick, existingVideos }
+                return { url: "", logs, createClick, existingVideos }
+                } catch (err) {
+                    log(`error: video setup script threw: ${err instanceof Error ? err.message : String(err)}`)
+                    return { url: "", logs }
+                }
             },
             args: [beforeUrl, afterUrl, prompt]
         })
@@ -333,6 +340,7 @@ export async function generateVideoInChrome(beforeUrl: string, afterUrl: string,
         log("step: click Create button")
         const result = results[0]?.result as ScriptResult | undefined
         logScriptResult("chrome-flow", result, log)
+        if (!result) log(`[chrome-flow] error: executeScript returned no result: ${JSON.stringify(results)}`)
         if (!result?.createClick) {
             throw new Error("Could not find video Create button coordinates")
         }
