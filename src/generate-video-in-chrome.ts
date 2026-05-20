@@ -199,9 +199,7 @@ export async function generateVideoInChrome(beforeUrl: string, afterUrl: string,
 
         const results = await chrome.scripting.executeScript({
             target: { tabId },
-            func: async (startImgUrl: string, endImgUrl: string, textPrompt: string): Promise<{ url: string; logs: string[]; createClick?: { x: number; y: number }; existingVideos?: string[] }> => {
-                const logs: string[] = []
-                const log = (msg: string) => { logs.push(msg); console.log("[flow-agent]", msg) }
+            func: async (startImgUrl: string, endImgUrl: string, textPrompt: string): Promise<{ url: string; createClick?: { x: number; y: number }; existingVideos?: string[] }> => {
                 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
                 const findButton = (text: string) => Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes(text))
                 const isClickable = (button: HTMLButtonElement) => {
@@ -244,10 +242,11 @@ export async function generateVideoInChrome(beforeUrl: string, afterUrl: string,
                 const startSrc = await uploadAndWait(startImgUrl, "start frame")
                 const endSrc = await uploadAndWait(endImgUrl, "end frame")
 
+                log("step: upload success")
                 const selectFrame = async (buttonText: string, src: string | null) => {
                     if (!src) { log(`skip: selectFrame "${buttonText}" — no src`); return }
                     log(`step: select ${buttonText} frame`)
-                    const btn = Array.from(document.querySelectorAll<HTMLElement>('div[type="button"][aria-haspopup="dialog"]'))
+                    const btn = Array.from(document.querySelectorAll<HTMLElement>('[type="button"]'))
                         .filter((d) => {
                             const rect = d.getBoundingClientRect()
                             const style = window.getComputedStyle(d)
@@ -262,29 +261,41 @@ export async function generateVideoInChrome(beforeUrl: string, afterUrl: string,
                                 return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none"
                             })
                         const popup = popups[popups.length - 1]
-                        if (!popup) throw new Error(`Could not find ${buttonText} frame picker popup`)
+                        if (!popup) {
+                            throw new Error(`Could not find ${buttonText} frame picker popup`)
+                        }
                         return Array.from(popup.querySelectorAll<HTMLImageElement>("img"))
                     }
-                    if (!btn) throw new Error(`Could not find ${buttonText} frame button`)
+                    if (!btn) {
+                        throw new Error(`Could not find ${buttonText} frame button`)
+                    }
                     btn.click()
                     await sleep(600)
                     const nameId = (src.split("name=")[1] || src).split("&")[0]
-                    const list = document.querySelector<HTMLElement>('[data-testid="virtuoso-item-list"]')
-                    if (!list) throw new Error(`Could not find ${buttonText} frame picker list`)
-                    const row = Array.from(list.querySelectorAll<HTMLElement>('div[class*="sc-1dc6bdcb-15"]'))
+
+                    const list = document.querySelector<HTMLElement>('[role="dialog"] [data-testid="virtuoso-item-list"]')
+                    if (!list) {
+                        throw new Error(`Could not find ${buttonText} frame picker list`)
+                    }
+
+                    const row = Array.from(list.querySelectorAll<HTMLElement>('div[data-item-index]'))
                         .find((el) => Array.from(el.querySelectorAll<HTMLImageElement>("img")).some((img) => img.src.includes(nameId)))
+
                     if (!row) {
                         const fallbackImg = dialogImagesOnly().find((img) => img.src.includes(nameId))
-                        const fallbackRow = fallbackImg?.closest<HTMLElement>('div[class*="sc-1dc6bdcb-15"], [role="button"], button')
+                        const fallbackRow = fallbackImg?.closest<HTMLElement>('div[data-item-index], [role="option"], [role="button"], button')
                         if (!fallbackRow) throw new Error(`Could not find ${buttonText} image row inside frame picker popup`)
                         fallbackRow.click()
                     } else {
-                        row.click()
+                        const clickable = row.querySelector<HTMLElement>('[role="option"]') || row
+                        clickable.click()
                     }
+
                     await sleep(600)
                     log(`ok: ${buttonText} frame selected`)
                 }
 
+                log("step: selectFrame start -> end")
                 await selectFrame("Start", startSrc)
                 await selectFrame("End", endSrc)
 
@@ -308,19 +319,23 @@ export async function generateVideoInChrome(beforeUrl: string, afterUrl: string,
                     return text === "Create" || text.endsWith("Create") || text.includes("arrow_forwardCreate")
                 }) as HTMLButtonElement[]
                 const createBtn = createBtns.filter(isClickable).sort((a, b) => b.getBoundingClientRect().x - a.getBoundingClientRect().x)[0]
-                if (!createBtn) { log("warn: Create button not found"); return { url: "", logs } }
+                if (!createBtn) { log("warn: Create button not found"); return { url: "" } }
                 const r = createBtn.getBoundingClientRect()
                 const createClick = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
                 const existingVideos = Array.from(document.querySelectorAll<HTMLVideoElement>('video')).map(v => v.src).filter(Boolean)
                 log(`ok: Create button located at ${JSON.stringify(createClick)}`)
-                return { url: "", logs, createClick, existingVideos }
+                return { url: "", createClick, existingVideos }
             },
             args: [beforeUrl, afterUrl, prompt]
         })
 
+        log('results: ' + JSON.stringify(results))
+        log("step: click Create button")
         const result = results[0]?.result as ScriptResult | undefined
         logScriptResult("chrome-flow", result, log)
-        if (!result?.createClick) throw new Error("Could not find video Create button coordinates")
+        if (!result?.createClick) {
+            throw new Error("Could not find video Create button coordinates")
+        }
 
         await clickFlowPoint(result.createClick, "Create video")
         const waitResults = await chrome.scripting.executeScript({
