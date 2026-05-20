@@ -292,6 +292,11 @@ export async function generateVideoInChrome(beforeUrl: string, afterUrl: string,
                     } else {
                         const clickable = row.querySelector<HTMLElement>('[role="option"]') || row
                         clickable.click()
+
+                        if(buttonText === 'Start'){
+                            await sleep(1000)
+                            clickable.click()
+                        }
                     }
 
                     await sleep(600)
@@ -299,8 +304,8 @@ export async function generateVideoInChrome(beforeUrl: string, afterUrl: string,
                 }
 
                 log("step: selectFrame start -> end")
-                await selectFrame("Start", startSrc)
                 await selectFrame("End", endSrc)
+                await selectFrame("Start", startSrc)
 
                 log("step: type prompt into Slate editor")
                 const editor = document.querySelector('[data-slate-editor="true"]') as HTMLElement
